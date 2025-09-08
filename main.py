@@ -197,6 +197,16 @@ def home():
             </ul>
         </div>
         """
+    else:
+        html += """
+        <div class="warning">
+            <h2 style="color: #d63636;">Atenção: Nenhum arquivo Excel encontrado</h2>
+            <p>Por favor, faça upload de um arquivo Excel com a estrutura correta ou use o endpoint abaixo para recarregar os dados:</p>
+            <form action="/recarregar-dados" method="POST">
+                <button type="submit">Recarregar Dados</button>
+            </form>
+        </div>
+        """
     
     html += """
     </body>
@@ -209,7 +219,7 @@ def home():
 @app.route('/listar-ies')
 @cache.cached(timeout=300)
 def listar_ies():
-    """Retorna a lista de todas as IES disponíveis na API"""
+    """Retorna a lista de todas das IES disponíveis na API"""
     ies_disponiveis = list(dados_ies.keys())
     return jsonify({"ies_disponiveis": ies_disponiveis})
 
@@ -371,6 +381,9 @@ if __name__ == '__main__':
     if not arquivos:
         print("Nenhum arquivo .xlsx encontrado no diretório atual.")
         print("Por favor, coloque um arquivo Excel com a estrutura especificada na mesma pasta do script.")
+        # No Render, não queremos que a aplicação falhe completamente
+        # Inicializamos com dados vazios mas a API fica disponível
+        dados_ies = {}
     else:
         print(f"Processando arquivo: {arquivos[0]}")
         dados_ies = processar_arquivo_excel(arquivos[0])
@@ -380,6 +393,8 @@ if __name__ == '__main__':
             print("API pronta para receber requisições.")
         else:
             print("Erro ao processar o arquivo Excel. Verifique a estrutura do arquivo.")
+            dados_ies = {}
     
-    port = int(os.environ.get('PORT', 5000))
+    # No Render, use a porta fornecida pela variável de ambiente PORT
+    port = int(os.environ.get('PORT', 10000))
     app.run(host='0.0.0.0', port=port, debug=False)
