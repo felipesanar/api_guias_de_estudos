@@ -78,7 +78,12 @@ def processar_arquivo_excel(nome_arquivo):
                     subtema_val = sheet.cell(row=row, column=col_indices['Subtema'] + 1).value
                     aula_val = sheet.cell(row=row, column=col_indices['Aula'] + 1).value
                     
-                    semestre = str(semestre_val or "").strip()
+                    # Converter semestre para inteiro (remover .0)
+                    try:
+                        semestre = str(int(float(semestre_val))) if semestre_val else ""
+                    except (ValueError, TypeError):
+                        semestre = str(semestre_val or "").strip()
+                    
                     materia = str(materia_val or "").strip()
                     tema = str(tema_val or "").strip()
                     subtema = str(subtema_val or "").strip()
@@ -238,6 +243,14 @@ def home():
                 border-radius: 5px; 
                 margin: 20px 0; 
             }
+            .success {
+                background-color: #d4edda; 
+                border: 1px solid #c3e6cb; 
+                color: #155724; 
+                padding: 15px; 
+                border-radius: 5px; 
+                margin: 20px 0; 
+            }
         </style>
     </head>
     <body>
@@ -251,10 +264,10 @@ def home():
         
         if arquivo_excel:
             html += f"""
-            <div class="info">
-                <h2>Arquivo Excel encontrado: {arquivo_excel}</h2>
-                <p>Clique no botão abaixo para carregar os dados:</p>
-                <p><a href="/recarregar-dados" style="color: #fff; background-color: #28a745; padding: 10px 15px; border-radius: 4px;">Carregar Dados do Arquivo</a></p>
+            <div class="warning">
+                <h2>Arquivo Excel encontrado mas dados não carregados: {arquivo_excel}</h2>
+                <p>Os dados serão carregados automaticamente. Aguarde...</p>
+                <p><a href="/recarregar-dados" style="color: #fff; background-color: #28a745; padding: 10px 15px; border-radius: 4px;">Carregar Dados Agora</a></p>
             </div>
             """
         else:
@@ -265,6 +278,13 @@ def home():
                 <p>Diretório atual: """ + os.getcwd() + """</p>
             </div>
             """
+    else:
+        html += f"""
+        <div class="success">
+            <h2>Dados carregados com sucesso!</h2>
+            <p>Arquivo processado automaticamente. IES disponíveis: {len(dados_ies)}</p>
+        </div>
+        """
     
     html += """
         <div class="endpoint">
@@ -300,13 +320,13 @@ def home():
     
     return html
 
-# Endpoint para listar todas as IES disponíveis
+# Endpoint para listar todas las IES disponíveis
 @app.route('/listar-ies')
 @cache.cached(timeout=300)
 def listar_ies():
     """Retorna a lista de todas as IES disponíveis na API"""
     if not dados_ies:
-        return jsonify({"error": "Nenhum arquivo Excel carregado. Use /recarregar-dados para carregar os dados."}), 404
+        return jsonify({"error": "Nenhum arquivo Excel carregado."}), 404
         
     ies_disponiveis = list(dados_ies.keys())
     return jsonify({"ies_disponiveis": ies_disponiveis})
@@ -317,7 +337,7 @@ def listar_ies():
 def get_conteudos_ies(nome_ies):
     """Retorna todos os conteúdos de uma IES específica"""
     if not dados_ies:
-        return jsonify({"error": "Nenhum arquivo Excel carregado. Use /recarregar-dados para carregar os dados."}), 404
+        return jsonify({"error": "Nenhum arquivo Excel carregado."}), 404
         
     if nome_ies not in dados_ies:
         return jsonify({"error": f"IES '{nome_ies}' não encontrada"}), 404
@@ -375,7 +395,7 @@ def get_conteudos_ies(nome_ies):
 def get_conteudos_ies_semestre(nome_ies, semestre):
     """Retorna os conteúdos de uma IES específica filtrados por semestre"""
     if not dados_ies:
-        return jsonify({"error": "Nenhum arquivo Excel carregado. Use /recarregar-dados para carregar os dados."}), 404
+        return jsonify({"error": "Nenhum arquivo Excel carregado."}), 404
         
     if nome_ies not in dados_ies:
         return jsonify({"error": f"IES '{nome_ies}' não encontrada"}), 404
@@ -611,5 +631,23 @@ def carregar_dados_iniciais():
     
     if arquivo_excel:
         print(f"Arquivo Excel encontrado: {arquivo_excel}")
+        print("Carregando dados automaticamente...")
         dados_ies = processar_arquivo_excel(arquivo_excel)
         
+        if dados_ies:
+            print(f"Dados carregados com sucesso para as IES: {list(dados_ies.keys())}")
+            print("API pronta para receber requisições.")
+        else:
+            print("Erro ao processar o arquivo Excel. Verifique a estrutura do arquivo.")
+    else:
+        print("Nenhum arquivo .xlsx ou .xls encontrado no diretório atual.")
+        print("Por favor, coloque um arquivo Excel com a estrutura especificada na mesma pasta do script.")
+        print(f"Diretório atual: {os.getcwd()}")
+
+# Carregar dados automaticamente ao iniciar
+carregar_dados_iniciais()
+
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 5000))
+    print(f"API pronta para receber requisições na porta {port}")
+    app.run(host='0.0.0.0', port=port, debug=True)
