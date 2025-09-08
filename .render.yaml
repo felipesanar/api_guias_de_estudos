@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: api-conteudos-ies
+    env: python
+    plan: free
+    branch: main
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn main:app
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
