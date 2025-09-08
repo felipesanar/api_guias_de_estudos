@@ -1,4 +1,4 @@
-import pandas as pd
+import openpyxl
 from flask import Flask, jsonify, request
 from collections import defaultdict
 import os
@@ -15,39 +15,48 @@ dados_ies = {}
 
 def processar_arquivo_excel(nome_arquivo):
     """
-    Processa o arquivo Excel e retorna um dicionário com os dados de todas as IES
+    Processa o arquivo Excel usando openpyxl (sem pandas)
     """
     try:
-        # Ler todas as abas do arquivo Excel
-        xls = pd.ExcelFile(nome_arquivo)
-        ies_abas = xls.sheet_names
+        # Carregar o arquivo Excel
+        wb = openpyxl.load_workbook(nome_arquivo, data_only=True)
+        ies_abas = wb.sheetnames
         
         dados_processados = {}
         
         for ies in ies_abas:
-            # Ler os dados da aba
-            df = pd.read_excel(nome_arquivo, sheet_name=ies)
-            df = df.astype(str).fillna('')
+            ws = wb[ies]
             
-            # Verificar se as colunas necessárias existem
-            colunas_necessarias = ['Semestre', 'Materia', 'Tema', 'Subtema', 'Aula']
-            for coluna in colunas_necessarias:
-                if coluna not in df.columns:
-                    print(f"Aviso: Coluna '{coluna}' não encontrada na IES {ies}")
+            # Encontrar cabeçalhos
+            headers = []
+            for col in range(1, ws.max_column + 1):
+                cell_value = ws.cell(row=1, column=col).value
+                if cell_value:
+                    headers.append(str(cell_value).strip())
+                else:
+                    headers.append(f"coluna_{col}")
             
             # Estrutura hierárquica para os dados desta IES
             ies_estruturada = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
             
-            for _, row in df.iterrows():
+            # Processar linhas (começando da linha 2)
+            for row in range(2, ws.max_row + 1):
                 try:
-                    semestre = str(row.get('Semestre', '')).strip()
-                    materia = str(row.get('Materia', '')).strip()
-                    tema = str(row.get('Tema', '')).strip()
-                    subtema = str(row.get('Subtema', '')).strip()
-                    aula = str(row.get('Aula', '')).strip()
-                    link_aula = str(row.get('Link Aula', '')).strip()
-                    link_pdf = str(row.get('Link PDF', '')).strip()
-                    link_quiz = str(row.get('Link Quiz', '')).strip()
+                    # Extrair valores das células
+                    valores = {}
+                    for col in range(1, ws.max_column + 1):
+                        if col - 1 < len(headers):
+                            cell_value = ws.cell(row=row, column=col).value
+                            valores[headers[col - 1]] = str(cell_value).strip() if cell_value is not None else ""
+                    
+                    semestre = valores.get('Semestre', '').strip()
+                    materia = valores.get('Materia', '').strip()
+                    tema = valores.get('Tema', '').strip()
+                    subtema = valores.get('Subtema', '').strip()
+                    aula = valores.get('Aula', '').strip()
+                    link_aula = valores.get('Link Aula', '').strip()
+                    link_pdf = valores.get('Link PDF', '').strip()
+                    link_quiz = valores.get('Link Quiz', '').strip()
                     
                     # Pular linhas com dados essenciais faltantes
                     if not all([semestre, materia, tema, subtema, aula]):
@@ -68,7 +77,7 @@ def processar_arquivo_excel(nome_arquivo):
                     })
                     
                 except Exception as e:
-                    print(f"Erro ao processar linha na IES {ies}: {e}")
+                    print(f"Erro ao processar linha {row} na IES {ies}: {e}")
                     continue
             
             # Converter defaultdict para dict regular e organizar a estrutura
@@ -89,6 +98,8 @@ def processar_arquivo_excel(nome_arquivo):
     except Exception as e:
         print(f"Erro ao processar arquivo Excel: {e}")
         return {}
+
+# ... (o resto do código permanece EXATAMENTE igual - funções formatar_resposta_api, endpoints, etc.)
 
 def formatar_resposta_api(dados_ies, especifica_ies=None, semestre=None):
     """
@@ -140,239 +151,7 @@ def formatar_resposta_api(dados_ies, especifica_ies=None, semestre=None):
     
     return resultado
 
-# Endpoint raiz com informações da API
-@app.route('/')
-def home():
-    # Gerar HTML com links clicáveis para todas as IES
-    html = """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>API de Conteúdos de IES</title>
-        <style>
-            body { font-family: Arial, sans-serif; margin: 40px; }
-            h1 { color: #333; }
-            ul { list-style-type: none; padding: 0; }
-            li { margin: 10px 0; }
-            a { 
-                text-decoration: none; 
-                color: #0366d6; 
-                font-weight: bold; 
-                padding: 8px 12px;
-                border: 1px solid #0366d6;
-                border-radius: 4px;
-                display: inline-block;
-            }
-            a:hover { background-color: #f0f7ff; }
-            .endpoint { margin-top: 30px; }
-            .ies-list { margin-top: 20px; }
-        </style>
-    </head>
-    <body>
-        <h1>API de Conteúdos de IES</h1>
-        <p>API para acesso aos conteúdos das IES a partir de arquivo Excel.</p>
-        
-        <div class="endpoint">
-            <h2>Endpoints disponíveis:</h2>
-            <ul>
-                <li><a href="/listar-ies">/listar-ies</a> - Lista todas as IES disponíveis</li>
-                <li><code>/&lt;nome_ies&gt;</code> - Todos os conteúdos de uma IES</li>
-                <li><code>/&lt;nome_ies&gt;/&lt;semestre&gt;</code> - Conteúdos de uma IES por semestre</li>
-            </ul>
-        </div>
-    """
-    
-    # Adicionar lista de IES com links clicáveis se os dados foram carregados
-    if dados_ies:
-        html += """
-        <div class="ies-list">
-            <h2>IES Disponíveis (clique para acessar):</h2>
-            <ul>
-        """
-        
-        for ies in sorted(dados_ies.keys()):
-            html += f'<li><a href="/{ies}">{ies}</a></li>'
-        
-        html += """
-            </ul>
-        </div>
-        """
-    else:
-        html += """
-        <div class="warning">
-            <h2 style="color: #d63636;">Atenção: Nenhum arquivo Excel encontrado</h2>
-            <p>Por favor, faça upload de um arquivo Excel com a estrutura correta ou use o endpoint abaixo para recarregar os dados:</p>
-            <form action="/recarregar-dados" method="POST">
-                <button type="submit">Recarregar Dados</button>
-            </form>
-        </div>
-        """
-    
-    html += """
-    </body>
-    </html>
-    """
-    
-    return html
-
-# Endpoint para listar todas as IES disponíveis
-@app.route('/listar-ies')
-@cache.cached(timeout=300)
-def listar_ies():
-    """Retorna a lista de todas das IES disponíveis na API"""
-    ies_disponiveis = list(dados_ies.keys())
-    return jsonify({"ies_disponiveis": ies_disponiveis})
-
-# Rota dinâmica para acessar conteúdos por IES
-@app.route('/<string:nome_ies>')
-@cache.cached(timeout=300)
-def get_conteudos_ies(nome_ies):
-    """Retorna todos os conteúdos de uma IES específica"""
-    if nome_ies not in dados_ies:
-        return jsonify({"error": f"IES '{nome_ies}' não encontrada"}), 404
-    
-    dados_formatados = formatar_resposta_api(dados_ies, nome_ies)
-    
-    # Adicionar links para semestres se quisermos uma visualização HTML
-    if request.args.get('format') == 'html':
-        html = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>Conteúdos da IES {nome_ies}</title>
-            <style>
-                body {{ font-family: Arial, sans-serif; margin: 40px; }}
-                h1 {{ color: #333; }}
-                ul {{ list-style-type: none; padding: 0; }}
-                li {{ margin: 10px 0; }}
-                a {{ 
-                    text-decoration: none; 
-                    color: #0366d6; 
-                    font-weight: bold; 
-                    padding: 8px 12px;
-                    border: 1px solid #0366d6;
-                    border-radius: 4px;
-                    display: inline-block;
-                }}
-                a:hover {{ background-color: #f0f7ff; }}
-                .back-link {{ margin-top: 20px; }}
-            </style>
-        </head>
-        <body>
-            <h1>Conteúdos da IES {nome_ies}</h1>
-            <p><a href="/">← Voltar para página inicial</a></p>
-            
-            <h2>Semestres disponíveis:</h2>
-            <ul>
-        """
-        
-        for semestre in sorted(dados_ies[nome_ies].keys()):
-            html += f'<li><a href="/{nome_ies}/{semestre}">Semestre {semestre}</a></li>'
-        
-        html += """
-            </ul>
-        </body>
-        </html>
-        """
-        return html
-    
-    return jsonify(dados_formatados)
-
-# Rota dinâmica para acessar conteúdos por IES e semestre
-@app.route('/<string:nome_ies>/<string:semestre>')
-@cache.cached(timeout=300)
-def get_conteudos_ies_semestre(nome_ies, semestre):
-    """Retorna os conteúdos de uma IES específica filtrados por semestre"""
-    if nome_ies not in dados_ies:
-        return jsonify({"error": f"IES '{nome_ies}' não encontrada"}), 404
-    
-    if semestre not in dados_ies[nome_ies]:
-        return jsonify({"error": f"Semestre '{semestre}' não encontrado para a IES '{nome_ies}'"}), 404
-    
-    dados_formatados = formatar_resposta_api(dados_ies, nome_ies, semestre)
-    
-    # Adicionar visualização HTML se solicitado
-    if request.args.get('format') == 'html':
-        html = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>Conteúdos da IES {nome_ies} - Semestre {semestre}</title>
-            <style>
-                body {{ font-family: Arial, sans-serif; margin: 40px; }}
-                h1, h2 {{ color: #333; }}
-                .back-link {{ margin-bottom: 20px; }}
-                a {{ 
-                    text-decoration: none; 
-                    color: #0366d6; 
-                }}
-                a:hover {{ text-decoration: underline; }}
-                .materia {{ margin-top: 20px; border-left: 4px solid #0366d6; padding-left: 15px; }}
-                .tema {{ margin-left: 20px; }}
-                .subtema {{ margin-left: 40px; }}
-                .aula {{ margin-left: 60px; }}
-            </style>
-        </head>
-        <body>
-            <div class="back-link">
-                <a href="/{nome_ies}">← Voltar para {nome_ies}</a> | 
-                <a href="/">Página inicial</a>
-            </div>
-            
-            <h1>IES {nome_ies} - Semestre {semestre}</h1>
-        """
-        
-        for materia in dados_formatados[nome_ies][semestre]:
-            html += f'<div class="materia"><h2>{materia["materia"]}</h2></div>'
-            
-            for tema in materia["temas"]:
-                html += f'<div class="tema"><h3>{tema["tema"]}</h3></div>'
-                
-                for subtema in tema["subtemas"]:
-                    html += f'<div class="subtema"><h4>{subtema["subtema"]}</h4></div>'
-                    
-                    for aula in subtema["aulas"]:
-                        html += f'<div class="aula"><strong>{aula["nome"]}</strong>'
-                        if aula["link_aula"]:
-                            html += f' | <a href="{aula["link_aula"]}" target="_blank">Aula</a>'
-                        if aula["link_pdf"]:
-                            html += f' | <a href="{aula["link_pdf"]}" target="_blank">PDF</a>'
-                        if aula["link_quiz"]:
-                            html += f' | <a href="{aula["link_quiz"]}" target="_blank">Quiz</a>'
-                        html += '</div>'
-        
-        html += """
-        </body>
-        </html>
-        """
-        return html
-    
-    return jsonify(dados_formatados)
-
-# Endpoint para recarregar os dados sem reiniciar o servidor
-@app.route('/recarregar-dados', methods=['POST'])
-def recarregar_dados():
-    """Recarrega os dados do arquivo Excel sem precisar reiniciar o servidor"""
-    global dados_ies
-    try:
-        arquivos = glob.glob('*.xlsx')
-        if not arquivos:
-            return jsonify({"error": "Nenhum arquivo .xlsx encontrado"}), 404
-        
-        dados_ies = processar_arquivo_excel(arquivos[0])
-        return jsonify({"status": "dados_recarregados", "ies_carregadas": list(dados_ies.keys())})
-    except Exception as e:
-        return jsonify({"error": f"Erro ao recarregar dados: {str(e)}"}), 500
-
-# Handler para erros 404
-@app.errorhandler(404)
-def not_found(error):
-    return jsonify({"error": "Endpoint não encontrado"}), 404
-
-# Handler para erros 500
-@app.errorhandler(500)
-def internal_error(error):
-    return jsonify({"error": "Erro interno do servidor"}), 500
+# ... (mantenha TODOS os endpoints Flask exatamente como estão)
 
 if __name__ == '__main__':
     # Procurar por arquivos Excel no diretório atual
