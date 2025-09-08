@@ -99,8 +99,6 @@ def processar_arquivo_excel(nome_arquivo):
         print(f"Erro ao processar arquivo Excel: {e}")
         return {}
 
-# ... (o resto do código permanece EXATAMENTE igual - funções formatar_resposta_api, endpoints, etc.)
-
 def formatar_resposta_api(dados_ies, especifica_ies=None, semestre=None):
     """
     Formata os dados para a resposta da API conforme a hierarquia solicitada
@@ -151,7 +149,248 @@ def formatar_resposta_api(dados_ies, especifica_ies=None, semestre=None):
     
     return resultado
 
-# ... (mantenha TODOS os endpoints Flask exatamente como estão)
+# Endpoint raiz com informações da API
+@app.route('/')
+def home():
+    # Gerar HTML com links clicáveis para todas as IES
+    html = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>API de Conteúdos de IES</title>
+        <style>
+            body { font-family: Arial, sans-serif; margin: 40px; }
+            h1 { color: #333; }
+            ul { list-style-type: none; padding: 0; }
+            li { margin: 10px 0; }
+            a { 
+                text-decoration: none; 
+                color: #0366d6; 
+                font-weight: bold; 
+                padding: 8px 12px;
+                border: 1px solid #0366d6;
+                border-radius: 4px;
+                display: inline-block;
+            }
+            a:hover { background-color: #f0f7ff; }
+            .endpoint { margin-top: 30px; }
+            .ies-list { margin-top: 20px; }
+        </style>
+    </head>
+    <body>
+        <h1>API de Conteúdos de IES</h1>
+        <p>API para acesso aos conteúdos das IES a partir de arquivo Excel.</p>
+        
+        <div class="endpoint">
+            <h2>Endpoints disponíveis:</h2>
+            <ul>
+                <li><a href="/listar-ies">/listar-ies</a> - Lista todas as IES disponíveis</li>
+                <li><code>/&lt;nome_ies&gt;</code> - Todos os conteúdos de uma IES</li>
+                <li><code>/&lt;nome_ies&gt;/&lt;semestre&gt;</code> - Conteúdos de uma IES por semestre</li>
+            </ul>
+        </div>
+    """
+    
+    # Adicionar lista de IES com links clicáveis se os dados foram carregados
+    if dados_ies:
+        html += """
+        <div class="ies-list">
+            <h2>IES Disponíveis (clique para acessar):</h2>
+            <ul>
+        """
+        
+        for ies in sorted(dados_ies.keys()):
+            html += f'<li><a href="/{ies}">{ies}</a></li>'
+        
+        html += """
+            </ul>
+        </div>
+        """
+    else:
+        html += """
+        <div class="warning">
+            <h2 style="color: #d63636;">Atenção: Nenhum arquivo Excel encontrado</h2>
+            <p>Por favor, faça upload de um arquivo Excel com a estrutura correta ou use o endpoint abaixo para recarregar os dados:</p>
+            <form action="/recarregar-dados" method="POST">
+                <button type="submit">Recarregar Dados</button>
+            </form>
+        </div>
+        """
+    
+    html += """
+    </body>
+    </html>
+    """
+    
+    return html
+
+# Endpoint para listar todas as IES disponíveis
+@app.route('/listar-ies')
+@cache.cached(timeout=300)
+def listar_ies():
+    """Retorna a lista de todas as IES disponíveis na API"""
+    ies_disponiveis = list(dados_ies.keys())
+    return jsonify({"ies_disponiveis": ies_disponiveis})
+
+# Rota dinâmica para acessar conteúdos por IES
+@app.route('/<string:nome_ies>')
+@cache.cached(timeout=300)
+def get_conteudos_ies(nome_ies):
+    """Retorna todos os conteúdos de uma IES específica"""
+    if nome_ies not in dados_ies:
+        return jsonify({"error": f"IES '{nome_ies}' não encontrada"}), 404
+    
+    dados_formatados = formatar_resposta_api(dados_ies, nome_ies)
+    
+    # Adicionar links para semestres se quisermos uma visualização HTML
+    if request.args.get('format') == 'html':
+        html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Conteúdos da IES {nome_ies}</title>
+            <style>
+                body {{ font-family: Arial, sans-serif; margin: 40px; }}
+                h1 {{ color: #333; }}
+                ul {{ list-style-type: none; padding: 0; }}
+                li {{ margin: 10px 0; }}
+                a {{ 
+                    text-decoration: none; 
+                    color: #0366d6; 
+                    font-weight: bold; 
+                    padding: 8px 12px;
+                    border: 1px solid #0366d6;
+                    border-radius: 4px;
+                    display: inline-block;
+                }}
+                a:hover {{ background-color: #f0f7ff; }}
+                .back-link {{ margin-top: 20px; }}
+            </style>
+        </head>
+        <body>
+            <h1>Conteúdos da IES {nome_ies}</h1>
+            <p><a href="/">← Voltar para página inicial</a></p>
+            
+            <h2>Semestres disponíveis:</h2>
+            <ul>
+        """
+        
+        for semestre in sorted(dados_ies[nome_ies].keys()):
+            html += f'<li><a href="/{nome_ies}/{semestre}">Semestre {semestre}</a></li>'
+        
+        html += """
+            </ul>
+        </body>
+        </html>
+        """
+        return html
+    
+    return jsonify(dados_formatados)
+
+# Rota dinâmica para acessar conteúdos por IES e semestre
+@app.route('/<string:nome_ies>/<string:semestre>')
+@cache.cached(timeout=300)
+def get_conteudos_ies_semestre(nome_ies, semestre):
+    """Retorna os conteúdos de uma IES específica filtrados por semestre"""
+    if nome_ies not in dados_ies:
+        return jsonify({"error": f"IES '{nome_ies}' não encontrada"}), 404
+    
+    if semestre not in dados_ies[nome_ies]:
+        return jsonify({"error": f"Semestre '{semestre}' não encontrado para a IES '{nome_ies}'"}), 404
+    
+    dados_formatados = formatar_resposta_api(dados_ies, nome_ies, semestre)
+    
+    # Adicionar visualização HTML se solicitado
+    if request.args.get('format') == 'html':
+        html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Conteúdos da IES {nome_ies} - Semestre {semestre}</title>
+            <style>
+                body {{ font-family: Arial, sans-serif; margin: 40px; }}
+                h1, h2 {{ color: #333; }}
+                .back-link {{ margin-bottom: 20px; }}
+                a {{ 
+                    text-decoration: none; 
+                    color: #0366d6; 
+                }}
+                a:hover {{ text-decoration: underline; }}
+                .materia {{ margin-top: 20px; border-left: 4px solid #0366d6; padding-left: 15px; }}
+                .tema {{ margin-left: 20px; }}
+                .subtema {{ margin-left: 40px; }}
+                .aula {{ margin-left: 60px; }}
+            </style>
+        </head>
+        <body>
+            <div class="back-link">
+                <a href="/{nome_ies}">← Voltar para {nome_ies}</a> | 
+                <a href="/">Página inicial</a>
+            </div>
+            
+            <h1>IES {nome_ies} - Semestre {semestre}</h1>
+        """
+        
+        for materia in dados_formatados[nome_ies][semestre]:
+            html += f'<div class="materia"><h2>{materia["materia"]}</h2></div>'
+            
+            for tema in materia["temas"]:
+                html += f'<div class="tema"><h3>{tema["tema"]}</h3></div>'
+                
+                for subtema in tema["subtemas"]:
+                    html += f'<div class="subtema"><h4>{subtema["subtema"]}</h4></div>'
+                    
+                    for aula in subtema["aulas"]:
+                        html += f'<div class="aula"><strong>{aula["nome"]}</strong>'
+                        if aula["link_aula"]:
+                            html += f' | <a href="{aula["link_aula"]}" target="_blank">Aula</a>'
+                        if aula["link_pdf"]:
+                            html += f' | <a href="{aula["link_pdf"]}" target="_blank">PDF</a>'
+                        if aula["link_quiz"]:
+                            html += f' | <a href="{aula["link_quiz"]}" target="_blank">Quiz</a>'
+                        html += '</div>'
+        
+        html += """
+        </body>
+        </html>
+        """
+        return html
+    
+    return jsonify(dados_formatados)
+
+# Endpoint para recarregar os dados sem reiniciar o servidor
+@app.route('/recarregar-dados', methods=['POST'])
+def recarregar_dados():
+    """Recarrega os dados do arquivo Excel sem precisar reiniciar o servidor"""
+    global dados_ies
+    try:
+        arquivos = glob.glob('*.xlsx')
+        if not arquivos:
+            return jsonify({"error": "Nenhum arquivo .xlsx encontrado"}), 404
+        
+        dados_ies = processar_arquivo_excel(arquivos[0])
+        return jsonify({"status": "dados_recarregados", "ies_carregadas": list(dados_ies.keys())})
+    except Exception as e:
+        return jsonify({"error": f"Erro ao recarregar dados: {str(e)}"}), 500
+
+# Handler para erros 404
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({"error": "Endpoint não encontrado"}), 404
+
+# Handler para erros 500
+@app.errorhandler(500)
+def internal_error(error):
+    return jsonify({"error": "Erro interno do servidor"}), 500
+
+# Endpoint de debug para verificar se o Flask está carregado
+@app.route('/debug')
+def debug():
+    return jsonify({
+        'status': 'flask_loaded',
+        'routes': [str(rule) for rule in app.url_map.iter_rules()],
+        'python_version': '3.13.4'
+    })
 
 if __name__ == '__main__':
     # Procurar por arquivos Excel no diretório atual
