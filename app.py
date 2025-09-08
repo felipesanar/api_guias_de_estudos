@@ -13,19 +13,32 @@ cache = Cache(app, config={'CACHE_TYPE': 'simple'})
 # Estrutura global para armazenar os dados processados
 dados_ies = {}
 
+def encontrar_arquivo_excel():
+    """Encontra o arquivo Excel no diretório atual"""
+    # Procurar por arquivos Excel com várias extensões possíveis
+    extensoes = ['*.xlsx', '*.xls']
+    for extensao in extensoes:
+        arquivos = glob.glob(extensao)
+        if arquivos:
+            return arquivos[0]
+    return None
+
 def processar_arquivo_excel(nome_arquivo):
     """
     Processa o arquivo Excel e retorna um dicionário com os dados de todas as IES
     usando openpyxl em vez de pandas
     """
     try:
+        print(f"Processando arquivo: {nome_arquivo}")
         # Carregar o arquivo Excel
         wb = openpyxl.load_workbook(nome_arquivo, data_only=True)
         ies_abas = wb.sheetnames
         
+        print(f"Abas encontradas: {ies_abas}")
         dados_processados = {}
         
         for ies in ies_abas:
+            print(f"Processando IES: {ies}")
             # Obter a aba
             sheet = wb[ies]
             
@@ -34,6 +47,8 @@ def processar_arquivo_excel(nome_arquivo):
             for col in range(1, sheet.max_column + 1):
                 cell_value = sheet.cell(row=1, column=col).value
                 headers.append(str(cell_value).strip() if cell_value is not None else f"Coluna{col}")
+            
+            print(f"Cabeçalhos encontrados: {headers}")
             
             # Verificar se as colunas necessárias existem
             colunas_necessarias = ['Semestre', 'Materia', 'Tema', 'Subtema', 'Aula']
@@ -57,11 +72,17 @@ def processar_arquivo_excel(nome_arquivo):
             for row in range(2, sheet.max_row + 1):
                 try:
                     # Obter valores das células
-                    semestre = str(sheet.cell(row=row, column=col_indices['Semestre'] + 1).value or "").strip()
-                    materia = str(sheet.cell(row=row, column=col_indices['Materia'] + 1).value or "").strip()
-                    tema = str(sheet.cell(row=row, column=col_indices['Tema'] + 1).value or "").strip()
-                    subtema = str(sheet.cell(row=row, column=col_indices['Subtema'] + 1).value or "").strip()
-                    aula = str(sheet.cell(row=row, column=col_indices['Aula'] + 1).value or "").strip()
+                    semestre_val = sheet.cell(row=row, column=col_indices['Semestre'] + 1).value
+                    materia_val = sheet.cell(row=row, column=col_indices['Materia'] + 1).value
+                    tema_val = sheet.cell(row=row, column=col_indices['Tema'] + 1).value
+                    subtema_val = sheet.cell(row=row, column=col_indices['Subtema'] + 1).value
+                    aula_val = sheet.cell(row=row, column=col_indices['Aula'] + 1).value
+                    
+                    semestre = str(semestre_val or "").strip()
+                    materia = str(materia_val or "").strip()
+                    tema = str(tema_val or "").strip()
+                    subtema = str(subtema_val or "").strip()
+                    aula = str(aula_val or "").strip()
                     
                     # Obter links se existirem
                     link_aula = ""
@@ -70,12 +91,17 @@ def processar_arquivo_excel(nome_arquivo):
                     
                     # Procurar por colunas de links
                     for idx, header in enumerate(headers):
-                        if "link" in header.lower() and "aula" in header.lower():
-                            link_aula = str(sheet.cell(row=row, column=idx + 1).value or "").strip()
-                        elif "link" in header.lower() and "pdf" in header.lower():
-                            link_pdf = str(sheet.cell(row=row, column=idx + 1).value or "").strip()
-                        elif "link" in header.lower() and "quiz" in header.lower():
-                            link_quiz = str(sheet.cell(row=row, column=idx + 1).value or "").strip()
+                        cell_val = sheet.cell(row=row, column=idx + 1).value
+                        if cell_val is None:
+                            continue
+                            
+                        header_lower = header.lower()
+                        if "link" in header_lower and "aula" in header_lower:
+                            link_aula = str(cell_val or "").strip()
+                        elif "link" in header_lower and "pdf" in header_lower:
+                            link_pdf = str(cell_val or "").strip()
+                        elif "link" in header_lower and "quiz" in header_lower:
+                            link_quiz = str(cell_val or "").strip()
                     
                     # Pular linhas com dados essenciais faltantes
                     if not all([semestre, materia, tema, subtema, aula]):
@@ -116,6 +142,8 @@ def processar_arquivo_excel(nome_arquivo):
         
     except Exception as e:
         print(f"Erro ao processar arquivo Excel: {e}")
+        import traceback
+        traceback.print_exc()
         return {}
 
 def formatar_resposta_api(dados_ies, especifica_ies=None, semestre=None):
@@ -202,6 +230,14 @@ def home():
                 border-radius: 5px; 
                 margin: 20px 0; 
             }
+            .info {
+                background-color: #d1ecf1; 
+                border: 1px solid #bee5eb; 
+                color: #0c5460; 
+                padding: 15px; 
+                border-radius: 5px; 
+                margin: 20px 0; 
+            }
         </style>
     </head>
     <body>
@@ -211,13 +247,24 @@ def home():
     
     # Verificar se há dados carregados
     if not dados_ies:
-        html += """
-        <div class="warning">
-            <h2>Atenção: Nenhum arquivo Excel encontrado</h2>
-            <p>Por favor, faça upload de um arquivo Excel com a estrutura correta ou use o endpoint abaixo para recarregar.</p>
-            <p><a href="/recarregar-dados" style="color: #fff; background-color: #007bff; padding: 10px 15px; border-radius: 4px;">Recarregar Dados</a></p>
-        </div>
-        """
+        arquivo_excel = encontrar_arquivo_excel()
+        
+        if arquivo_excel:
+            html += f"""
+            <div class="info">
+                <h2>Arquivo Excel encontrado: {arquivo_excel}</h2>
+                <p>Clique no botão abaixo para carregar os dados:</p>
+                <p><a href="/recarregar-dados" style="color: #fff; background-color: #28a745; padding: 10px 15px; border-radius: 4px;">Carregar Dados do Arquivo</a></p>
+            </div>
+            """
+        else:
+            html += """
+            <div class="warning">
+                <h2>Atenção: Nenhum arquivo Excel encontrado</h2>
+                <p>Por favor, faça upload de um arquivo Excel (.xlsx ou .xls) com a estrutura correta no diretório do servidor.</p>
+                <p>Diretório atual: """ + os.getcwd() + """</p>
+            </div>
+            """
     
     html += """
         <div class="endpoint">
@@ -259,7 +306,7 @@ def home():
 def listar_ies():
     """Retorna a lista de todas as IES disponíveis na API"""
     if not dados_ies:
-        return jsonify({"error": "Nenhum arquivo Excel carregado"}), 404
+        return jsonify({"error": "Nenhum arquivo Excel carregado. Use /recarregar-dados para carregar os dados."}), 404
         
     ies_disponiveis = list(dados_ies.keys())
     return jsonify({"ies_disponiveis": ies_disponiveis})
@@ -270,7 +317,7 @@ def listar_ies():
 def get_conteudos_ies(nome_ies):
     """Retorna todos os conteúdos de uma IES específica"""
     if not dados_ies:
-        return jsonify({"error": "Nenhum arquivo Excel carregado"}), 404
+        return jsonify({"error": "Nenhum arquivo Excel carregado. Use /recarregar-dados para carregar os dados."}), 404
         
     if nome_ies not in dados_ies:
         return jsonify({"error": f"IES '{nome_ies}' não encontrada"}), 404
@@ -328,7 +375,7 @@ def get_conteudos_ies(nome_ies):
 def get_conteudos_ies_semestre(nome_ies, semestre):
     """Retorna os conteúdos de uma IES específica filtrados por semestre"""
     if not dados_ies:
-        return jsonify({"error": "Nenhum arquivo Excel carregado"}), 404
+        return jsonify({"error": "Nenhum arquivo Excel carregado. Use /recarregar-dados para carregar os dados."}), 404
         
     if nome_ies not in dados_ies:
         return jsonify({"error": f"IES '{nome_ies}' não encontrada"}), 404
@@ -402,11 +449,79 @@ def recarregar_dados():
     """Recarrega os dados do arquivo Excel sem precisar reiniciar o servidor"""
     global dados_ies
     try:
-        arquivos = glob.glob('*.xlsx')
-        if not arquivos:
-            return jsonify({"error": "Nenhum arquivo .xlsx encontrado"}), 404
+        arquivo_excel = encontrar_arquivo_excel()
+        if not arquivo_excel:
+            error_msg = "Nenhum arquivo .xlsx ou .xls encontrado no diretório"
+            print(error_msg)
+            
+            if request.method == 'GET':
+                return f"""
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Erro ao Recarregar</title>
+                    <meta http-equiv="refresh" content="5;url=/" />
+                    <style>
+                        body {{ font-family: Arial, sans-serif; margin: 40px; }}
+                        .error {{ 
+                            background-color: #f8d7da; 
+                            border: 1px solid #f5c6cb; 
+                            color: #721c24; 
+                            padding: 15px; 
+                            border-radius: 5px; 
+                        }}
+                    </style>
+                </head>
+                <body>
+                    <div class="error">
+                        <h2>Erro ao recarregar dados</h2>
+                        <p>{error_msg}</p>
+                        <p>Diretório: {os.getcwd()}</p>
+                        <p>Redirecionando para a página inicial em 5 segundos...</p>
+                        <p><a href="/">Clique aqui se não for redirecionado</a></p>
+                    </div>
+                </body>
+                </html>
+                """, 404
+                
+            return jsonify({"error": error_msg}), 404
         
-        dados_ies = processar_arquivo_excel(arquivos[0])
+        dados_ies = processar_arquivo_excel(arquivo_excel)
+        
+        if not dados_ies:
+            error_msg = "Erro ao processar o arquivo Excel. Verifique a estrutura do arquivo."
+            print(error_msg)
+            
+            if request.method == 'GET':
+                return f"""
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Erro ao Processar</title>
+                    <meta http-equiv="refresh" content="5;url=/" />
+                    <style>
+                        body {{ font-family: Arial, sans-serif; margin: 40px; }}
+                        .error {{ 
+                            background-color: #f8d7da; 
+                            border: 1px solid #f5c6cb; 
+                            color: #721c24; 
+                            padding: 15px; 
+                            border-radius: 5px; 
+                        }}
+                    </style>
+                </head>
+                <body>
+                    <div class="error">
+                        <h2>Erro ao processar dados</h2>
+                        <p>{error_msg}</p>
+                        <p>Redirecionando para a página inicial em 5 segundos...</p>
+                        <p><a href="/">Clique aqui se não for redirecionado</a></p>
+                    </div>
+                </body>
+                </html>
+                """, 500
+                
+            return jsonify({"error": error_msg}), 500
         
         # Se for uma requisição GET, redirecionar para a página inicial
         if request.method == 'GET':
@@ -430,6 +545,8 @@ def recarregar_dados():
             <body>
                 <div class="success">
                     <h2>Dados recarregados com sucesso!</h2>
+                    <p>Arquivo: {arquivo_excel}</p>
+                    <p>IES carregadas: {', '.join(list(dados_ies.keys()))}</p>
                     <p>Redirecionando para a página inicial em 3 segundos...</p>
                     <p><a href="/">Clique aqui se não for redirecionado</a></p>
                 </div>
@@ -437,7 +554,11 @@ def recarregar_dados():
             </html>
             """
         
-        return jsonify({"status": "dados_recarregados", "ies_carregadas": list(dados_ies.keys())})
+        return jsonify({
+            "status": "dados_recarregados", 
+            "arquivo": arquivo_excel,
+            "ies_carregadas": list(dados_ies.keys())
+        })
     except Exception as e:
         error_msg = f"Erro ao recarregar dados: {str(e)}"
         print(error_msg)
@@ -448,6 +569,7 @@ def recarregar_dados():
             <html>
             <head>
                 <title>Erro ao Recarregar</title>
+                <meta http-equiv="refresh" content="5;url=/" />
                 <style>
                     body {{ font-family: Arial, sans-serif; margin: 40px; }}
                     .error {{ 
@@ -458,14 +580,15 @@ def recarregar_dados():
                         border-radius: 5px; 
                     }}
                 </style>
-            </head>
-            <body>
-                <div class="error">
-                    <h2>Erro ao recarregar dados</h2>
-                    <p>{error_msg}</p>
-                    <p><a href="/">Voltar para página inicial</a></p>
-                </div>
-            </body>
+                </head>
+                <body>
+                    <div class="error">
+                        <h2>Erro ao recarregar dados</h2>
+                        <p>{error_msg}</p>
+                        <p>Redirecionando para a página inicial em 5 segundos...</p>
+                        <p><a href="/">Clique aqui se não for redirecionado</a></p>
+                    </div>
+                </body>
             </html>
             """, 500
             
@@ -481,22 +604,12 @@ def not_found(error):
 def internal_error(error):
     return jsonify({"error": "Erro interno do servidor"}), 500
 
-if __name__ == '__main__':
-    # Procurar por arquivos Excel no diretório atual
-    arquivos = glob.glob('*.xlsx')
+def carregar_dados_iniciais():
+    """Carrega os dados iniciais ao iniciar o servidor"""
+    global dados_ies
+    arquivo_excel = encontrar_arquivo_excel()
     
-    if not arquivos:
-        print("Nenhum arquivo .xlsx encontrado no diretório atual.")
-        print("Por favor, coloque um arquivo Excel com a estrutura especificada na mesma pasta do script.")
-    else:
-        print(f"Processando arquivo: {arquivos[0]}")
-        dados_ies = processar_arquivo_excel(arquivos[0])
+    if arquivo_excel:
+        print(f"Arquivo Excel encontrado: {arquivo_excel}")
+        dados_ies = processar_arquivo_excel(arquivo_excel)
         
-        if dados_ies:
-            print(f"Dados carregados com sucesso para as IES: {list(dados_ies.keys())}")
-            print("API pronta para receber requisições.")
-        else:
-            print("Erro ao processar o arquivo Excel. Verifique a estrutura do arquivo.")
-    
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=False)
